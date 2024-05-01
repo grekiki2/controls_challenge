@@ -53,7 +53,7 @@ class TinyPhysicsModel:
     options.intra_op_num_threads = 1
     options.inter_op_num_threads = 1
     options.log_severity_level = 3
-    if 'CUDAExecutionProvider' in ort.get_available_providers():
+    if 'CUDAExecutionProvider' in ort.get_available_providers() and False:
       if debug:
         print("ONNX Runtime is using GPU")
       provider = ('CUDAExecutionProvider', {'cudnn_conv_algo_search': 'DEFAULT'})
