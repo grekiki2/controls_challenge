@@ -64,8 +64,8 @@ def create_report(test, baseline, sample_rollouts, costs):
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
-  parser.add_argument("--model_path", type=str, required=True)
-  parser.add_argument("--data_path", type=str, required=True)
+  parser.add_argument("--model_path", type=str, default="./models/tinyphysics.onnx")
+  parser.add_argument("--data_path", type=str, default="./data")
   parser.add_argument("--num_segs", type=int, default=100)
   parser.add_argument("--test_controller", default='simple', choices=CONTROLLERS.keys())
   parser.add_argument("--baseline_controller", default='simple', choices=CONTROLLERS.keys())

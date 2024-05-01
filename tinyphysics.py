@@ -75,39 +75,41 @@ class TinyPhysicsModel:
     # we only care about the last timestep (batch size is just 1)
     assert probs.shape[0] == 1
     assert probs.shape[2] == VOCAB_SIZE
-    sample = np.random.choice(probs.shape[2], p=probs[0, -1])
-    return sample
+    lat_accel_pred = np.random.choice(probs.shape[2], p=probs[0, -1])
+    return lat_accel_pred
 
+  # Inputs are cropped to CONTEXT_LENGTH
   def get_current_lataccel(self, sim_states: List[State], actions: List[float], past_preds: List[float]) -> float:
-    tokenized_actions = self.tokenizer.encode(past_preds)
+    tokenized_past_preds = self.tokenizer.encode(past_preds)
     raw_states = [list(x) for x in sim_states]
-    states = np.column_stack([actions, raw_states])
+    states = np.column_stack([actions, raw_states]) # [(action, roll_lataccel, v_ego, a_ego)]
     input_data = {
       'states': np.expand_dims(states, axis=0).astype(np.float32),
-      'tokens': np.expand_dims(tokenized_actions, axis=0).astype(np.int64)
+      'tokens': np.expand_dims(tokenized_past_preds, axis=0).astype(np.int64)
     }
-    return self.tokenizer.decode(self.predict(input_data, temperature=1.))
+    return self.tokenizer.decode(self.predict(input_data))
 
 
 class TinyPhysicsSimulator:
-  def __init__(self, model: TinyPhysicsModel, data_path: str, controller: BaseController, debug: bool = False) -> None:
+  def __init__(self, model: TinyPhysicsModel, data_path: str, controller: BaseController, debug: bool = False, rng_seed:bool=True) -> None:
     self.data_path = data_path
     self.sim_model = model
     self.data = self.get_data(data_path)
     self.controller = controller
     self.debug = debug
     self.times = []
-    self.reset()
+    self.reset(rng_seed)
 
-  def reset(self) -> None:
+  def reset(self, rng_seed:bool=False) -> None:
     self.step_idx = CONTEXT_LENGTH
     self.state_history = [self.get_state_target(i)[0] for i in range(self.step_idx)]
     self.action_history = self.data['steer_command'].values[:self.step_idx].tolist()
     self.current_lataccel_history = [self.get_state_target(i)[1] for i in range(self.step_idx)]
     self.target_lataccel_history = [self.get_state_target(i)[1] for i in range(self.step_idx)]
     self.current_lataccel = self.current_lataccel_history[-1]
-    seed = int(md5(self.data_path.encode()).hexdigest(), 16) % 10**4
-    np.random.seed(seed)
+    if rng_seed:
+      seed = int(md5(self.data_path.encode()).hexdigest(), 16) % 10**4
+      np.random.seed(seed)
 
   def get_data(self, data_path: str) -> pd.DataFrame:
     df = pd.read_csv(data_path)
@@ -121,14 +123,13 @@ class TinyPhysicsSimulator:
     return processed_df
 
   def sim_step(self, step_idx: int) -> None:
-    pred = self.sim_model.get_current_lataccel(
+    pred_lataccel = self.sim_model.get_current_lataccel(
       sim_states=self.state_history[-CONTEXT_LENGTH:],
       actions=self.action_history[-CONTEXT_LENGTH:],
       past_preds=self.current_lataccel_history[-CONTEXT_LENGTH:]
     )
-    pred = np.clip(pred, self.current_lataccel - MAX_ACC_DELTA, self.current_lataccel + MAX_ACC_DELTA)
     if step_idx >= CONTROL_START_IDX:
-      self.current_lataccel = pred
+      self.current_lataccel = np.clip(pred_lataccel, self.current_lataccel - MAX_ACC_DELTA, self.current_lataccel + MAX_ACC_DELTA)
     else:
       self.current_lataccel = self.get_state_target(step_idx)[1]
 
@@ -136,13 +137,14 @@ class TinyPhysicsSimulator:
 
   def control_step(self, step_idx: int) -> None:
     if step_idx >= CONTROL_START_IDX:
-      action = self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx])
+      action = self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], True)
     else:
+      self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], False)
       action = self.data['steer_command'].values[step_idx]
     action = np.clip(action, STEER_RANGE[0], STEER_RANGE[1])
     self.action_history.append(action)
 
-  def get_state_target(self, step_idx: int) -> Tuple[List, float]:
+  def get_state_target(self, step_idx: int) -> Tuple[State, float]:
     state = self.data.iloc[step_idx]
     return State(roll_lataccel=state['roll_lataccel'], v_ego=state['v_ego'], a_ego=state['a_ego']), state['target_lataccel']
 
@@ -175,7 +177,7 @@ class TinyPhysicsSimulator:
 
   def rollout(self) -> None:
     if self.debug:
-      plt.ion()
+      # plt.ion()
       fig, ax = plt.subplots(4, figsize=(12, 14), constrained_layout=True)
 
     for _ in range(CONTEXT_LENGTH, len(self.data)):
@@ -189,15 +191,15 @@ class TinyPhysicsSimulator:
         plt.pause(0.01)
 
     if self.debug:
-      plt.ioff()
+      # plt.ioff()
       plt.show()
     return self.compute_cost()
 
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
-  parser.add_argument("--model_path", type=str, required=True)
-  parser.add_argument("--data_path", type=str, required=True)
+  parser.add_argument("--model_path", type=str, default="./models/tinyphysics.onnx")
+  parser.add_argument("--data_path", type=str, default="./data")
   parser.add_argument("--num_segs", type=int, default=100)
   parser.add_argument("--debug", action='store_true')
   parser.add_argument("--controller", default='simple', choices=CONTROLLERS.keys())
