@@ -7,14 +7,14 @@ import seaborn as sns
 
 from io import BytesIO
 from matplotlib import pyplot as plt
-from concurrent.futures import ProcessPoolExecutor, wait
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from tqdm import tqdm
 
 from tinyphysics import TinyPhysicsModel, TinyPhysicsSimulator, CONTROLLERS, CONTROL_START_IDX
 
 sns.set_theme()
-SAMPLE_ROLLOUTS = 5
+SAMPLE_ROLLOUTS = 2
 
 
 def img2base64(fig):
@@ -32,10 +32,10 @@ def create_report(test, baseline, sample_rollouts, costs):
   res.append("<h2>Aggregate Costs</h2>")
   res_df = pd.DataFrame(costs)
   fig, axs = plt.subplots(ncols=3, figsize=(18, 6), sharey=True)
-  bins = np.arange(0, 1000, 10)
+  bins = np.arange(0, 100, 2)
   for ax, cost in zip(axs, ['lataccel_cost', 'jerk_cost', 'total_cost']):
-    for controller in ['test', 'baseline']:
-      ax.hist(res_df[res_df['controller'] == controller][cost], bins=bins, label=controller, alpha=0.5)
+    for controller, col in [('test', 'blue'), ('baseline', 'red')]:
+      ax.hist(res_df[res_df['controller'] == controller][cost], color=col, bins=bins, label=controller, alpha=0.75, histtype='stepfilled')
     ax.set_xlabel('Cost')
     ax.set_ylabel('Frequency')
     ax.set_title(f'Cost Distribution: {cost}')
@@ -73,8 +73,6 @@ if __name__ == "__main__":
   args = parser.parse_args()
 
   tinyphysicsmodel = TinyPhysicsModel(args.model_path, debug=False)
-  test_controller = CONTROLLERS[args.test_controller]()
-  baseline_controller = CONTROLLERS[args.baseline_controller]()
 
   data_path = Path(args.data_path)
   assert data_path.is_dir(), "data_path should be a directory"
@@ -84,6 +82,9 @@ if __name__ == "__main__":
   files = sorted(data_path.iterdir())[:args.num_segs]
 
   def process_data_file(data_file):
+    # restart the controllers for each data file
+    test_controller = CONTROLLERS[args.test_controller]()
+    baseline_controller = CONTROLLERS[args.baseline_controller]()
     test_sim = TinyPhysicsSimulator(tinyphysicsmodel, str(data_file), controller=test_controller, debug=False)
     test_cost = test_sim.rollout()
     baseline_sim = TinyPhysicsSimulator(tinyphysicsmodel, str(data_file), controller=baseline_controller, debug=False)
@@ -93,9 +94,8 @@ if __name__ == "__main__":
 
   with ProcessPoolExecutor() as exe:
     futures = [exe.submit(process_data_file, data_file) for data_file in files]
-    wait(futures)
       
-    for d, future in enumerate(futures):
+    for d, future in tqdm(enumerate(futures), total=len(futures)):
 
       lat_accel_history, test_lataccel_history, baseline_lataccel_history, test_cost, baseline_cost = future.result()
 
@@ -108,8 +108,6 @@ if __name__ == "__main__":
           'test_controller_lataccel': test_lataccel_history,
           'baseline_controller_lataccel': baseline_lataccel_history,
         })
-
-      # print(d, test_cost["total_cost"], baseline_cost["total_cost"])
 
       costs.append({'seg': files[d].stem, 'controller': 'test', **test_cost})
       costs.append({'seg': files[d].stem, 'controller': 'baseline', **baseline_cost})

@@ -1,5 +1,4 @@
 from collections import namedtuple
-import random
 
 State = namedtuple('State', ['roll_lataccel', 'v_ego', 'a_ego'])
 
