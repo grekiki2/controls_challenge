@@ -7,6 +7,7 @@ import seaborn as sns
 
 from io import BytesIO
 from matplotlib import pyplot as plt
+from concurrent.futures import ProcessPoolExecutor, wait
 from pathlib import Path
 from tqdm import tqdm
 
@@ -81,23 +82,36 @@ if __name__ == "__main__":
   costs = []
   sample_rollouts = []
   files = sorted(data_path.iterdir())[:args.num_segs]
-  for d, data_file in enumerate(tqdm(files, total=len(files))):
+
+  def process_data_file(data_file):
     test_sim = TinyPhysicsSimulator(tinyphysicsmodel, str(data_file), controller=test_controller, debug=False)
     test_cost = test_sim.rollout()
     baseline_sim = TinyPhysicsSimulator(tinyphysicsmodel, str(data_file), controller=baseline_controller, debug=False)
     baseline_cost = baseline_sim.rollout()
 
-    if d < SAMPLE_ROLLOUTS:
-      sample_rollouts.append({
-        'seg': data_file.stem,
-        'test_controller': args.test_controller,
-        'baseline_controller': args.baseline_controller,
-        'desired_lataccel': test_sim.target_lataccel_history,
-        'test_controller_lataccel': test_sim.current_lataccel_history,
-        'baseline_controller_lataccel': baseline_sim.current_lataccel_history,
-      })
+    return test_sim.target_lataccel_history, test_sim.current_lataccel_history, baseline_sim.current_lataccel_history, test_cost, baseline_cost
 
-    costs.append({'seg': data_file.stem, 'controller': 'test', **test_cost})
-    costs.append({'seg': data_file.stem, 'controller': 'baseline', **baseline_cost})
+  with ProcessPoolExecutor() as exe:
+    futures = [exe.submit(process_data_file, data_file) for data_file in files]
+    wait(futures)
+      
+    for d, future in enumerate(futures):
+
+      lat_accel_history, test_lataccel_history, baseline_lataccel_history, test_cost, baseline_cost = future.result()
+
+      if d < SAMPLE_ROLLOUTS:
+        sample_rollouts.append({
+          'seg': files[d].stem,
+          'test_controller': args.test_controller,
+          'baseline_controller': args.baseline_controller,
+          'desired_lataccel': lat_accel_history,
+          'test_controller_lataccel': test_lataccel_history,
+          'baseline_controller_lataccel': baseline_lataccel_history,
+        })
+
+      # print(d, test_cost["total_cost"], baseline_cost["total_cost"])
+
+      costs.append({'seg': files[d].stem, 'controller': 'test', **test_cost})
+      costs.append({'seg': files[d].stem, 'controller': 'baseline', **baseline_cost})
 
   create_report(args.test_controller, args.baseline_controller, sample_rollouts, costs)
