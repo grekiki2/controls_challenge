@@ -32,13 +32,22 @@ class Controller(BaseController):
 
 class Controller2(BaseController):
   def __init__(self):
-    pass
+    self.state_history = []
+    self.action_history = []
+    self.lat_accel_history = []
+    self.model = TinyPhysicsModel("./models/tinyphysics.onnx")
   def update(self, target_lataccel, current_lataccel, state, active, last_action):
-    if getattr(self, "prev_state", None) is not None:
-      print(*self.prev_state, last_action)
-    roll_lataccel, v_ego, a_ego = state
-    self.prev_state = (v_ego, a_ego, roll_lataccel, target_lataccel)
-    return last_action
+    # roll_lataccel, v_ego, a_ego = state
+    if active:
+      action = self.determineBestAction(state, current_lataccel, target_lataccel)
+    else:
+      action = last_action
+    self.state_history.append(state)
+    self.action_history.append(action)
+    self.lat_accel_history.append(current_lataccel)
+    return action
+  def determineBestAction(self, state, cur_lat_accel, target_lataccel):
+    return 0
 
 CONTROLLERS = {
   'open': OpenController,

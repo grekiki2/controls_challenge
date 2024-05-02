@@ -33,7 +33,7 @@ class LataccelTokenizer:
 
 
 class TinyPhysicsModel:
-  def __init__(self, model_path: str, debug: bool) -> None:
+  def __init__(self, model_path: str) -> None:
     self.tokenizer = LataccelTokenizer()
     options = ort.SessionOptions()
     options.intra_op_num_threads = 1
@@ -56,7 +56,7 @@ class TinyPhysicsModel:
     lat_accel_pred = np.random.choice(probs.shape[2], p=probs[0, -1])
     return lat_accel_pred
 
-  # Inputs are cropped to CONTEXT_LENGTH
+  # Inputs are cropped to CONTEXT_LENGTH. The only important function
   def get_current_lataccel(self, sim_states: List[State], actions: List[float], past_preds: List[float]) -> float:
     tokenized_past_preds = self.tokenizer.encode(past_preds)
     raw_states = [list(x) for x in sim_states]

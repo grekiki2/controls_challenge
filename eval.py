@@ -72,7 +72,7 @@ if __name__ == "__main__":
   parser.add_argument("--baseline_controller", default='simple', choices=CONTROLLERS.keys())
   args = parser.parse_args()
 
-  tinyphysicsmodel = TinyPhysicsModel(args.model_path, debug=False)
+  tinyphysicsmodel = TinyPhysicsModel(args.model_path)
 
   data_path = Path(args.data_path)
   assert data_path.is_dir(), "data_path should be a directory"

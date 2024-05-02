@@ -130,7 +130,7 @@ if __name__ == "__main__":
   parser.add_argument("--controller", default='simple', choices=CONTROLLERS.keys())
   args = parser.parse_args()
 
-  tinyphysicsmodel = TinyPhysicsModel(args.model_path, debug=args.debug)
+  tinyphysicsmodel = TinyPhysicsModel(args.model_path)
   controller = CONTROLLERS[args.controller]()
 
   data_path = Path(args.data_path)
