@@ -10,7 +10,6 @@ from typing import List, Tuple
 from tqdm import tqdm
 
 from common import *
-from controllers import BaseController, CONTROLLERS
 import signal
 
 sns.set_theme()
@@ -18,11 +17,10 @@ signal.signal(signal.SIGINT, signal.SIG_DFL)  # Enable Ctrl-C on plot windows
 
 
 class TinyPhysicsSimulator:
-  def __init__(self, model: TinyPhysicsModel, data_path: str, controller: BaseController, debug: bool = False, rng_seed:bool=True) -> None:
+  def __init__(self, model: TinyPhysicsModel, data_path: str, debug: bool = False, rng_seed:bool=True) -> None:
     self.data_path = data_path
     self.sim_model = model
     self.data = self.get_data(data_path)
-    self.controller = controller
     self.debug = debug
     self.times = []
     self.reset(rng_seed)
@@ -51,9 +49,8 @@ class TinyPhysicsSimulator:
 
   def control_step(self, step_idx: int) -> None:
     if step_idx >= CONTROL_START_IDX:
-      action = self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], True, self.action_history[step_idx-1])
+      action = self.getBestAction()
     else:
-      self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], False, self.action_history[step_idx-1])
       action = self.data['steer_command'].values[step_idx]
     action = np.clip(action, STEER_RANGE[0], STEER_RANGE[1])
     self.action_history.append(action)
@@ -121,7 +118,8 @@ class TinyPhysicsSimulator:
     cost = self.compute_cost()
     print(cost)
     return cost
-
+  def getBestAction(self):
+    return 0
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
@@ -129,22 +127,20 @@ if __name__ == "__main__":
   parser.add_argument("--data_path", type=str, default="./data")
   parser.add_argument("--num_segs", type=int, default=100)
   parser.add_argument("--debug", action='store_true')
-  parser.add_argument("--controller", default='simple', choices=CONTROLLERS.keys())
   args = parser.parse_args()
 
   tinyphysicsmodel = TinyPhysicsModel(args.model_path)
-  controller = CONTROLLERS[args.controller]()
 
   data_path = Path(args.data_path)
   if data_path.is_file():
-    sim = TinyPhysicsSimulator(tinyphysicsmodel, args.data_path, controller=controller, debug=args.debug)
+    sim = TinyPhysicsSimulator(tinyphysicsmodel, args.data_path, debug=args.debug)
     costs = sim.rollout()
     print(f"\nAverage lataccel_cost: {costs['lataccel_cost']:>6.4}, average jerk_cost: {costs['jerk_cost']:>6.4}, average total_cost: {costs['total_cost']:>6.4}")
   elif data_path.is_dir():
     costs = []
     files = sorted(data_path.iterdir())[:args.num_segs]
     for data_file in tqdm(files, total=len(files)):
-      sim = TinyPhysicsSimulator(tinyphysicsmodel, str(data_file), controller=controller, debug=args.debug)
+      sim = TinyPhysicsSimulator(tinyphysicsmodel, str(data_file), debug=args.debug)
       cost = sim.rollout()
       costs.append(cost)
     costs_df = pd.DataFrame(costs)
