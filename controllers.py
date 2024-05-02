@@ -1,6 +1,5 @@
 from collections import namedtuple
-
-State = namedtuple('State', ['roll_lataccel', 'v_ego', 'a_ego'])
+from common import *
 
 class BaseController:
   def update(self, target_lataccel:float, current_lataccel:float, state:State, active:bool) -> float:
@@ -33,7 +32,12 @@ class Controller(BaseController):
     self.prev_error = error
     return self.kp * error + self.ki * self.integral + self.kd * derivative
 
-
+class Controller2(BaseController):
+  def __init__(self):
+    pass
+  def update(self, target_lataccel, current_lataccel, state, active):
+    roll_lataccel, v_ego, a_ego = state
+    return 0.0
 
 CONTROLLERS = {
   'open': OpenController,
