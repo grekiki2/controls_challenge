@@ -116,9 +116,11 @@ class TinyPhysicsSimulator:
         self.plot_data(ax[3], [(np.array(self.state_history)[:, 1], 'v_ego')], ['Step', 'v_ego'], 'v_ego')
         plt.pause(0.01)
 
-    if self.debug:
-      plt.show()
-    return self.compute_cost()
+    # if self.debug:
+    #   plt.show()
+    cost = self.compute_cost()
+    print(cost)
+    return cost
 
 
 if __name__ == "__main__":

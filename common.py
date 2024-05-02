@@ -49,6 +49,8 @@ class TinyPhysicsModel:
 
   def predict(self, input_data: dict, temperature=1.) -> dict:
     res = self.ort_session.run(None, input_data)[0]
+    # print("Predicting")
+    # print(input_data)
     probs = self.softmax(res / temperature, axis=-1)
     # we only care about the last timestep (batch size is just 1)
     assert probs.shape[0] == 1
@@ -68,5 +70,10 @@ class TinyPhysicsModel:
   def get_current_lataccel(self, sim_states: List[State], actions: List[float], past_preds: List[float]) -> float:
     return self.tokenizer.decode(self.predict(self.input_data(sim_states, actions, past_preds)))
   
-  def get_lataccel_logits(self, sim_states: List[State], actions: List[float], past_preds: List[float]) -> np.ndarray:
-    return self.ort_session.run(None, self.input_data(sim_states, actions, past_preds))[0][0, -1]
+  def get_lataccel_logits(self, sim_states: List[State], actions: List[float], past_preds: List[float], dbg=False) -> np.ndarray:
+    input_data = self.input_data(sim_states, actions, past_preds)
+    # if dbg:
+    #     print(actions)
+    #     print("Predicting custom")
+    #     print(input_data)
+    return self.ort_session.run(None, input_data)[0][0, -1]
