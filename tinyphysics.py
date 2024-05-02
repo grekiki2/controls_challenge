@@ -30,7 +30,7 @@ class TinyPhysicsSimulator:
   def reset(self, rng_seed:bool=False) -> None:
     self.step_idx = CONTEXT_LENGTH
     self.state_history = [self.get_state_target(i)[0] for i in range(self.step_idx)]
-    self.action_history = self.data['steer_command'].values[:self.step_idx].tolist()
+    self.action_history:List[float] = self.data['steer_command'].values[:self.step_idx].tolist()
     self.current_lataccel_history = [self.get_state_target(i)[1] for i in range(self.step_idx)]
     self.target_lataccel_history = [self.get_state_target(i)[1] for i in range(self.step_idx)]
     self.current_lataccel = self.current_lataccel_history[-1]
@@ -49,6 +49,15 @@ class TinyPhysicsSimulator:
     })
     return processed_df
 
+  def control_step(self, step_idx: int) -> None:
+    if step_idx >= CONTROL_START_IDX:
+      action = self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], True, self.action_history[step_idx-1])
+    else:
+      self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], False, self.action_history[step_idx-1])
+      action = self.data['steer_command'].values[step_idx]
+    action = np.clip(action, STEER_RANGE[0], STEER_RANGE[1])
+    self.action_history.append(action)
+
   def sim_step(self, step_idx: int) -> None:
     pred_lataccel = self.sim_model.get_current_lataccel(
       sim_states=self.state_history[-CONTEXT_LENGTH:],
@@ -61,15 +70,6 @@ class TinyPhysicsSimulator:
       self.current_lataccel = self.get_state_target(step_idx)[1]
 
     self.current_lataccel_history.append(self.current_lataccel)
-
-  def control_step(self, step_idx: int) -> None:
-    if step_idx >= CONTROL_START_IDX:
-      action = self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], True)
-    else:
-      self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], False)
-      action = self.data['steer_command'].values[step_idx]
-    action = np.clip(action, STEER_RANGE[0], STEER_RANGE[1])
-    self.action_history.append(action)
 
   def get_state_target(self, step_idx: int) -> Tuple[State, float]:
     state = self.data.iloc[step_idx]

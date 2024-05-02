@@ -2,17 +2,15 @@ from collections import namedtuple
 from common import *
 
 class BaseController:
-  def update(self, target_lataccel:float, current_lataccel:float, state:State, active:bool) -> float:
+  def update(self, target_lataccel:float, current_lataccel:float, state:State, active:bool, last_action:float) -> float:
     raise NotImplementedError
 
-
 class OpenController(BaseController):
-  def update(self, target_lataccel, current_lataccel, state, active):
+  def update(self, target_lataccel, current_lataccel, state, active, last_action):
     return target_lataccel
 
-
 class SimpleController(BaseController):
-  def update(self, target_lataccel, current_lataccel, state, active):
+  def update(self, target_lataccel, current_lataccel, state, active, last_action):
     return (target_lataccel - current_lataccel) * 0.3
 
 class Controller(BaseController):
@@ -23,7 +21,7 @@ class Controller(BaseController):
     self.prev_error = 0
     self.integral = 0
 
-  def update(self, target_lataccel, current_lataccel, state, active):
+  def update(self, target_lataccel, current_lataccel, state, active, last_action):
     if not active:
       return
     error = target_lataccel - current_lataccel
@@ -35,12 +33,16 @@ class Controller(BaseController):
 class Controller2(BaseController):
   def __init__(self):
     pass
-  def update(self, target_lataccel, current_lataccel, state, active):
+  def update(self, target_lataccel, current_lataccel, state, active, last_action):
+    if getattr(self, "prev_state", None) is not None:
+      print(*self.prev_state, last_action)
     roll_lataccel, v_ego, a_ego = state
-    return 0.0
+    self.prev_state = (v_ego, a_ego, roll_lataccel, target_lataccel)
+    return last_action
 
 CONTROLLERS = {
   'open': OpenController,
   'simple': SimpleController,
   'c1': Controller,
+  'c2': Controller2,
 }
