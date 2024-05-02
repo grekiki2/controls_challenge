@@ -56,13 +56,17 @@ class TinyPhysicsModel:
     lat_accel_pred = np.random.choice(probs.shape[2], p=probs[0, -1])
     return lat_accel_pred
 
-  # Inputs are cropped to CONTEXT_LENGTH. The only important function
-  def get_current_lataccel(self, sim_states: List[State], actions: List[float], past_preds: List[float]) -> float:
+  def input_data(self, sim_states: List[State], actions: List[float], past_preds: List[float]):
     tokenized_past_preds = self.tokenizer.encode(past_preds)
     raw_states = [list(x) for x in sim_states]
     states = np.column_stack([actions, raw_states]) # [(action, roll_lataccel, v_ego, a_ego)]
-    input_data = {
+    return {
       'states': np.expand_dims(states, axis=0).astype(np.float32),
       'tokens': np.expand_dims(tokenized_past_preds, axis=0).astype(np.int64)
     }
-    return self.tokenizer.decode(self.predict(input_data))
+  # Inputs are cropped to CONTEXT_LENGTH. The only important function
+  def get_current_lataccel(self, sim_states: List[State], actions: List[float], past_preds: List[float]) -> float:
+    return self.tokenizer.decode(self.predict(self.input_data(sim_states, actions, past_preds)))
+  
+  def get_lataccel_logits(self, sim_states: List[State], actions: List[float], past_preds: List[float]) -> np.ndarray:
+    return self.ort_session.run(None, self.input_data(sim_states, actions, past_preds))[0][0, -1]

@@ -46,6 +46,7 @@ class Controller2(BaseController):
     self.action_history.append(action)
     self.lat_accel_history.append(current_lataccel)
     return action
+
   def determineBestAction(self, state, cur_lat_accel, target_lataccel):
     return 0
 
