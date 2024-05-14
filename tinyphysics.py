@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from common import *
 from controllers import BaseController, CONTROLLERS
+import controllers
 import signal
 
 sns.set_theme()
@@ -18,9 +19,8 @@ signal.signal(signal.SIGINT, signal.SIG_DFL)  # Enable Ctrl-C on plot windows
 
 
 class TinyPhysicsSimulator:
-  def __init__(self, model: TinyPhysicsModel, data_path: str, controller: BaseController, debug: bool = False, rng_seed:bool=True) -> None:
+  def __init__(self, data_path: str, controller: BaseController, debug: bool = False, rng_seed:bool=True) -> None:
     self.data_path = data_path
-    self.sim_model = model
     self.data = self.get_data(data_path)
     self.controller = controller
     self.debug = debug
@@ -53,13 +53,13 @@ class TinyPhysicsSimulator:
     if step_idx >= CONTROL_START_IDX:
       action = self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], True, self.action_history[step_idx-1])
     else:
-      self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], False, self.action_history[step_idx-1])
+      # self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], False, self.action_history[step_idx-1])
       action = self.data['steer_command'].values[step_idx]
     action = np.clip(action, STEER_RANGE[0], STEER_RANGE[1])
     self.action_history.append(action)
 
   def sim_step(self, step_idx: int) -> None:
-    pred_lataccel = self.sim_model.get_current_lataccel(
+    pred_lataccel = model.get_current_lataccel(
       sim_states=self.state_history[-CONTEXT_LENGTH:],
       actions=self.action_history[-CONTEXT_LENGTH:],
       past_preds=self.current_lataccel_history[-CONTEXT_LENGTH:]
@@ -106,7 +106,7 @@ class TinyPhysicsSimulator:
     if self.debug:
       fig, ax = plt.subplots(4, figsize=(12, 14), constrained_layout=True)
 
-    for _ in range(CONTEXT_LENGTH, len(self.data)):
+    for _ in range(CONTEXT_LENGTH, len(self.data)-CONTEXT_LENGTH):
       self.step()
       if self.debug and self.step_idx % 10 == 0:
         print(f"Step {self.step_idx:<5}: Current lataccel: {self.current_lataccel:>6.2f}, Target lataccel: {self.target_lataccel_history[-1]:>6.2f}")
@@ -132,19 +132,20 @@ if __name__ == "__main__":
   parser.add_argument("--controller", default='simple', choices=CONTROLLERS.keys())
   args = parser.parse_args()
 
-  tinyphysicsmodel = TinyPhysicsModel(args.model_path)
+  model = TinyPhysicsModel(args.model_path)
   controller = CONTROLLERS[args.controller]()
 
   data_path = Path(args.data_path)
   if data_path.is_file():
-    sim = TinyPhysicsSimulator(tinyphysicsmodel, args.data_path, controller=controller, debug=args.debug)
+    sim = TinyPhysicsSimulator(args.data_path, controller=controller, debug=args.debug)
     costs = sim.rollout()
     print(f"\nAverage lataccel_cost: {costs['lataccel_cost']:>6.4}, average jerk_cost: {costs['jerk_cost']:>6.4}, average total_cost: {costs['total_cost']:>6.4}")
   elif data_path.is_dir():
     costs = []
     files = sorted(data_path.iterdir())[:args.num_segs]
     for data_file in tqdm(files, total=len(files)):
-      sim = TinyPhysicsSimulator(tinyphysicsmodel, str(data_file), controller=controller, debug=args.debug)
+      sim = TinyPhysicsSimulator(str(data_file), controller=controller, debug=args.debug)
+      controllers.sim = sim
       cost = sim.rollout()
       costs.append(cost)
     costs_df = pd.DataFrame(costs)
