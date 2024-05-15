@@ -49,24 +49,29 @@ def simulateNActions(actions:List[float]):
   
   return sim2.current_lataccel_history[-len(actions):]
 
-N = 3
-STEP = 3
-ITERS = 27
-OPTS = np.linspace(-0.02*STEP, 0.02*STEP, 3).tolist()
+STEPS = [3, 3, 4]
+ITERS = 30
+OPTS = [
+  [-0.02, 0, 0.02],
+  [-0.02, 0, 0.02],
+  [0.0],
+]
 
 def solve():
   last_action = sim.action_history[-1]
   last_lataccel = sim.current_lataccel_history[-1]
-  target = sim.data['target_lataccel'].values[sim.step_idx: sim.step_idx + N*STEP]
+  target = sim.data['target_lataccel'].values[sim.step_idx: sim.step_idx + sum(STEPS)]
 
   perm_act = {}
-  perms = list(itertools.product(*[OPTS for _ in range(N)]))
+  perms = list(itertools.product(*OPTS))
   for perm in perms:
     actions = []
     curAction = last_action
-    for p in perm:
-      actions += np.linspace(curAction, curAction+p, STEP+1).tolist()[1:]
-      curAction += p
+    for num, p in zip(STEPS, perm):
+      for _ in range(num):
+        curAction += p
+        actions.append(curAction)
+
     perm_act[perm] = actions
   
   perm_costs = {perm:[] for perm in perms}
@@ -93,23 +98,16 @@ def solve():
 
   bestPerm = None
   bestCost = 1e9
-  bestCost2 = None
-  bestN = -1
   for perm in perms:
     cost = np.mean([5*c[0]+c[1] for c in perm_costs[perm]])
     # print(perm, f"{cost:.2f}", len(perm_costs[perm]))
     if cost < bestCost:
       bestCost = cost
       bestPerm = perm
-      bestCost2 = (np.mean([c[0] for c in perm_costs[perm]]), np.mean([c[1] for c in perm_costs[perm]]))
-      bestN = len(perm_costs[perm])
-  # print()
-  # print(f"Best cost: {bestCost2[0]:.2f}, {bestCost2[1]:.2f}")
-  # print(f"Best perm: {([f'{b:.3f}' for b in bestPerm])}")
-  # print(f"Best N: {bestN}")
-  # print(f"Best actions: ", f"{[f'{a:.2f}' for a in best]}")
+  print()
+  print(f"Best perm: {([f'{b:.3f}' for b in bestPerm])}")
     
-  return last_action + bestPerm[0]/STEP
+  return last_action + bestPerm[0]
 
 CONTROLLERS = {
   'open': OpenController,
