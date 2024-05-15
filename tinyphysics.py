@@ -26,6 +26,7 @@ class TinyPhysicsSimulator:
     self.debug = debug
     self.times = []
     self.reset(rng_seed)
+    controllers.sim = self
 
   def reset(self, rng_seed:bool=False) -> None:
     self.step_idx = CONTEXT_LENGTH
@@ -123,16 +124,16 @@ class TinyPhysicsSimulator:
     return cost
 
 
+model = TinyPhysicsModel("./models/tinyphysics.onnx")
+
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
-  parser.add_argument("--model_path", type=str, default="./models/tinyphysics.onnx")
   parser.add_argument("--data_path", type=str, default="./data")
   parser.add_argument("--num_segs", type=int, default=100)
   parser.add_argument("--debug", action='store_true')
   parser.add_argument("--controller", default='simple', choices=CONTROLLERS.keys())
   args = parser.parse_args()
 
-  model = TinyPhysicsModel(args.model_path)
   controller = CONTROLLERS[args.controller]()
 
   data_path = Path(args.data_path)
@@ -145,7 +146,6 @@ if __name__ == "__main__":
     files = sorted(data_path.iterdir())[:args.num_segs]
     for data_file in tqdm(files, total=len(files)):
       sim = TinyPhysicsSimulator(str(data_file), controller=controller, debug=args.debug)
-      controllers.sim = sim
       cost = sim.rollout()
       costs.append(cost)
     costs_df = pd.DataFrame(costs)

@@ -85,9 +85,9 @@ if __name__ == "__main__":
     # restart the controllers for each data file
     test_controller = CONTROLLERS[args.test_controller]()
     baseline_controller = CONTROLLERS[args.baseline_controller]()
-    test_sim = TinyPhysicsSimulator(tinyphysicsmodel, str(data_file), controller=test_controller, debug=False)
+    test_sim = TinyPhysicsSimulator(str(data_file), controller=test_controller, debug=False)
     test_cost = test_sim.rollout()
-    baseline_sim = TinyPhysicsSimulator(tinyphysicsmodel, str(data_file), controller=baseline_controller, debug=False)
+    baseline_sim = TinyPhysicsSimulator(str(data_file), controller=baseline_controller, debug=False)
     baseline_cost = baseline_sim.rollout()
 
     return test_sim.target_lataccel_history, test_sim.current_lataccel_history, baseline_sim.current_lataccel_history, test_cost, baseline_cost
