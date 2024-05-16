@@ -17,9 +17,9 @@ class SimpleController(BaseController):
 
 class Controller(BaseController):
   def __init__(self):
-    self.kp = 0.05
+    self.kp = 0.044
     self.ki = 0.1
-    self.kd = 0.01
+    self.kd = -0.035
     self.prev_error = 0
     self.integral = 0
 
@@ -32,12 +32,15 @@ class Controller(BaseController):
     self.prev_error = error
     return self.kp * error + self.ki * self.integral + self.kd * derivative
 
-DELTA = 10/1024
+IDX = 0
 class Controller2(BaseController):
   def __init__(self):
-    pass
+    global IDX
+    IDX=0
 
   def update(self, target_lataccel, current_lataccel, state, active, last_action):
+    global IDX
+    IDX+=1
     return solve()
 
 def simulateNActions(actions:List[float]):
@@ -49,11 +52,11 @@ def simulateNActions(actions:List[float]):
   
   return sim2.current_lataccel_history[-len(actions):]
 
-STEPS = [3, 3, 4]
+STEPS = [3, 6]
 ITERS = 30
 OPTS = [
-  [-0.02, 0, 0.02],
-  [-0.02, 0, 0.02],
+  [-0.1, 0, 0.1],
+  # [-0.1, 0, 0.1],
   [0.0],
 ]
 
@@ -86,7 +89,7 @@ def solve():
     bestCost = 1e9
     for perm in perms:
       perm_cost = np.mean([5*c[0]+c[1] for c in perm_costs[perm]])
-      ucb = perm_cost - 1.1*np.sqrt(np.log(n))/len(perm_costs[perm])*perm_cost
+      ucb = perm_cost - 0.8*np.sqrt(np.log(n))/len(perm_costs[perm])*perm_cost
       if ucb < bestCost:
         bestCost = ucb
         permToCheck = perm
@@ -100,13 +103,19 @@ def solve():
   bestCost = 1e9
   for perm in perms:
     cost = np.mean([5*c[0]+c[1] for c in perm_costs[perm]])
-    # print(perm, f"{cost:.2f}", len(perm_costs[perm]))
+    # print(f"{cost:.2f}", len(perm_costs[perm]), perm)
     if cost < bestCost:
       bestCost = cost
       bestPerm = perm
-  print()
-  print(f"Best perm: {([f'{b:.3f}' for b in bestPerm])}")
-    
+  # print(f"Best perm: {([f'{b:.3f}' for b in bestPerm])}")
+  if bestPerm[0] == 0:
+    corr = 0.9 if IDX>5 else 0.5
+  else:
+    corr = 1.1 if IDX>5 else 2
+  for i in range(len(OPTS)):
+    for j in range(len(OPTS[i])):
+      OPTS[i][j] *= corr
+
   return last_action + bestPerm[0]
 
 CONTROLLERS = {

@@ -27,7 +27,7 @@ def img2base64(fig):
 def create_report(test, baseline, sample_rollouts, costs):
   res = []
   res.append("<h1>Comma Controls Challenge: Report</h1>")
-  res.append(f"<b>Test Controller: {test}, Baseline Controller: {baseline}</b>")
+  res.append(f"<b>Baseline Controller: {baseline}, Test Controller: {test}</b>")
 
   res.append("<h2>Aggregate Costs</h2>")
   res_df = pd.DataFrame(costs)
@@ -79,7 +79,7 @@ if __name__ == "__main__":
 
   costs = []
   sample_rollouts = []
-  files = sorted(data_path.iterdir())[:args.num_segs]
+  files = sorted(data_path.iterdir())[60:60+args.num_segs]
 
   def process_data_file(data_file):
     # restart the controllers for each data file
@@ -92,7 +92,7 @@ if __name__ == "__main__":
 
     return test_sim.target_lataccel_history, test_sim.current_lataccel_history, baseline_sim.current_lataccel_history, test_cost, baseline_cost
 
-  with ProcessPoolExecutor() as exe:
+  with ProcessPoolExecutor(30) as exe:
     futures = [exe.submit(process_data_file, data_file) for data_file in files]
       
     for d, future in tqdm(enumerate(futures), total=len(futures)):

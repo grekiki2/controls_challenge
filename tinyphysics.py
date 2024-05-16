@@ -83,6 +83,7 @@ class TinyPhysicsSimulator:
     self.control_step(self.step_idx)
     self.sim_step(self.step_idx)
     self.step_idx += 1
+    # print(f"{self.compute_cost()['total_cost']:.2f}")
 
   def plot_data(self, ax, lines, axis_labels, title) -> None:
     ax.clear()
