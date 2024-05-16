@@ -52,11 +52,10 @@ def simulateNActions(actions:List[float]):
   
   return sim2.current_lataccel_history[-len(actions):]
 
-STEPS = [3, 6]
-ITERS = 30
+STEPS = [3, 7]
+ITERS = 50
 OPTS = [
-  [-0.1, 0, 0.1],
-  # [-0.1, 0, 0.1],
+  [-0.1, -0.05, 0, 0.05, 0.1],
   [0.0],
 ]
 
@@ -109,9 +108,11 @@ def solve():
       bestPerm = perm
   # print(f"Best perm: {([f'{b:.3f}' for b in bestPerm])}")
   if bestPerm[0] == 0:
-    corr = 0.9 if IDX>5 else 0.5
+    corr = 1/1.2 if IDX>3 else 0.5
+  elif bestPerm[0] in (OPTS[0][0], OPTS[0][-1]): # we want more movement
+    corr = 1.2 if IDX>3 else 2
   else:
-    corr = 1.1 if IDX>5 else 2
+    corr = 1
   for i in range(len(OPTS)):
     for j in range(len(OPTS[i])):
       OPTS[i][j] *= corr

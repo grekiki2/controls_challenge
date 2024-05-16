@@ -79,7 +79,7 @@ if __name__ == "__main__":
 
   costs = []
   sample_rollouts = []
-  files = sorted(data_path.iterdir())[60:60+args.num_segs]
+  files = sorted(data_path.iterdir())[:args.num_segs]
 
   def process_data_file(data_file):
     # restart the controllers for each data file
