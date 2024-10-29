@@ -38,7 +38,7 @@ LAT_ACCEL_COST_MULTIPLIER = 50.0
 FUTURE_PLAN_STEPS = FPS * 5  # 5 secs
 
 State = namedtuple('State', ['roll_lataccel', 'v_ego', 'a_ego'])
-FuturePlan = namedtuple('FuturePlan', ['lataccel', 'roll_lataccel', 'v_ego', 'a_ego'])
+FuturePlan = namedtuple('FuturePlan', ['target', 'roll_lataccel', 'v_ego', 'a_ego'])
 
 DATASET_URL = "https://huggingface.co/datasets/commaai/commaSteeringControl/resolve/main/data/SYNTHETIC_V0.zip"
 DATASET_PATH = Path(__file__).resolve().parent / "data"
@@ -85,12 +85,12 @@ class TinyPhysicsModel:
     return sample
 
   def get_current_lataccel(self, sim_states: List[State], actions: List[float], past_preds: List[float]) -> float:
-    tokenized_actions = self.tokenizer.encode(past_preds)
+    tokenized_lataccels = self.tokenizer.encode(past_preds)
     raw_states = [list(x) for x in sim_states]
     states = np.column_stack([actions, raw_states])
     input_data = {
       'states': np.expand_dims(states, axis=0).astype(np.float32),
-      'tokens': np.expand_dims(tokenized_actions, axis=0).astype(np.int64)
+      'tokens': np.expand_dims(tokenized_lataccels, axis=0).astype(np.int64)
     }
     return self.tokenizer.decode(self.predict(input_data, temperature=0.8))
 
@@ -106,12 +106,11 @@ class TinyPhysicsSimulator:
 
   def reset(self) -> None:
     self.step_idx = CONTEXT_LENGTH
-    state_target_futureplans = [self.get_state_target_futureplan(i) for i in range(self.step_idx)]
+    state_target_futureplans = [self.get_state_target_futureplan(i) for i in range(CONTEXT_LENGTH)]
     self.state_history = [x[0] for x in state_target_futureplans]
-    self.action_history = self.data['steer_command'].values[:self.step_idx].tolist()
+    self.action_history = self.data['steer_command'].values[:CONTEXT_LENGTH].tolist()
     self.current_lataccel_history = [x[1] for x in state_target_futureplans]
     self.target_lataccel_history = [x[1] for x in state_target_futureplans]
-    self.target_future = None
     self.current_lataccel = self.current_lataccel_history[-1]
     seed = int(md5(self.data_path.encode()).hexdigest(), 16) % 10**4
     np.random.seed(seed)
@@ -128,16 +127,16 @@ class TinyPhysicsSimulator:
     return processed_df
 
   def sim_step(self, step_idx: int) -> None:
-    pred = self.sim_model.get_current_lataccel(
-      sim_states=self.state_history[-CONTEXT_LENGTH:],
-      actions=self.action_history[-CONTEXT_LENGTH:],
-      past_preds=self.current_lataccel_history[-CONTEXT_LENGTH:]
-    )
-    pred = np.clip(pred, self.current_lataccel - MAX_ACC_DELTA, self.current_lataccel + MAX_ACC_DELTA)
-    if step_idx >= CONTROL_START_IDX:
-      self.current_lataccel = pred
-    else:
+    if step_idx < CONTROL_START_IDX:
+      # override with input before controls start
       self.current_lataccel = self.get_state_target_futureplan(step_idx)[1]
+    else:
+      pred = self.sim_model.get_current_lataccel(
+        sim_states=self.state_history[-CONTEXT_LENGTH:],
+        actions=self.action_history[-CONTEXT_LENGTH:],
+        past_preds=self.current_lataccel_history[-CONTEXT_LENGTH:]
+      )
+      self.current_lataccel = np.clip(pred, self.current_lataccel - MAX_ACC_DELTA, self.current_lataccel + MAX_ACC_DELTA)
 
     self.current_lataccel_history.append(self.current_lataccel)
 
@@ -154,10 +153,10 @@ class TinyPhysicsSimulator:
       State(roll_lataccel=state['roll_lataccel'], v_ego=state['v_ego'], a_ego=state['a_ego']),
       state['target_lataccel'],
       FuturePlan(
-        lataccel=self.data['target_lataccel'].values[step_idx + 1:step_idx + FUTURE_PLAN_STEPS].tolist(),
-        roll_lataccel=self.data['roll_lataccel'].values[step_idx + 1:step_idx + FUTURE_PLAN_STEPS].tolist(),
-        v_ego=self.data['v_ego'].values[step_idx + 1:step_idx + FUTURE_PLAN_STEPS].tolist(),
-        a_ego=self.data['a_ego'].values[step_idx + 1:step_idx + FUTURE_PLAN_STEPS].tolist()
+        target=self.data['target_lataccel'].values[step_idx + 1:step_idx + 1 + FUTURE_PLAN_STEPS].tolist(),
+        roll_lataccel=self.data['roll_lataccel'].values[step_idx + 1:step_idx + 1 + FUTURE_PLAN_STEPS].tolist(),
+        v_ego=self.data['v_ego'].values[step_idx + 1:step_idx + 1 + FUTURE_PLAN_STEPS].tolist(),
+        a_ego=self.data['a_ego'].values[step_idx + 1:step_idx + 1 + FUTURE_PLAN_STEPS].tolist()
       )
     )
 
@@ -166,6 +165,7 @@ class TinyPhysicsSimulator:
     self.state_history.append(state)
     self.target_lataccel_history.append(target)
     self.futureplan = futureplan
+    
     self.control_step(self.step_idx)
     self.sim_step(self.step_idx)
     self.step_idx += 1
@@ -194,7 +194,7 @@ class TinyPhysicsSimulator:
       plt.ion()
       fig, ax = plt.subplots(4, figsize=(12, 14), constrained_layout=True)
 
-    for _ in range(CONTEXT_LENGTH, len(self.data)):
+    for _ in range(CONTEXT_LENGTH, COST_END_IDX):
       self.step()
       if self.debug and self.step_idx % 10 == 0:
         print(f"Step {self.step_idx:<5}: Current lataccel: {self.current_lataccel:>6.2f}, Target lataccel: {self.target_lataccel_history[-1]:>6.2f}")

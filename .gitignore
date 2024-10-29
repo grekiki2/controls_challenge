@@ -1,5 +1,8 @@
 __pycache__/
 data/
-report.html
+*.html
 models/tinyphysics_*.onnx
 *.swp
+
+.python-version
+*.ipynb
