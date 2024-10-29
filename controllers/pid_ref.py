@@ -18,9 +18,8 @@ class Controller(BaseController):
 
     def update(self, target_lataccel, current_lataccel, state, future_plan):
         self.counter += 1
-        if self.counter == 81:
-            self.error_integral = 0
-            self.prev_error = 0
+        if self.counter < 81:
+            return 0
 
         # Optimized future lataccel average calculation with matching weights
         if len(future_plan.target) >= 3:

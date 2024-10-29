@@ -94,11 +94,11 @@ class TinyPhysicsModel:
     }
     return self.tokenizer.decode(self.predict(input_data, temperature=0.8))
 
+model = TinyPhysicsModel('./models/tinyphysics.onnx', debug=False)
 
 class TinyPhysicsSimulator:
-  def __init__(self, model: TinyPhysicsModel, data_path: str, controller: BaseController, debug: bool = False) -> None:
+  def __init__(self, data_path: str, controller: BaseController, debug: bool = False) -> None:
     self.data_path = data_path
-    self.sim_model = model
     self.data = self.get_data(data_path)
     self.controller = controller
     self.debug = debug
@@ -131,7 +131,7 @@ class TinyPhysicsSimulator:
       # override with input before controls start
       self.current_lataccel = self.get_state_target_futureplan(step_idx)[1]
     else:
-      pred = self.sim_model.get_current_lataccel(
+      pred = model.get_current_lataccel(
         sim_states=self.state_history[-CONTEXT_LENGTH:],
         actions=self.action_history[-CONTEXT_LENGTH:],
         past_preds=self.current_lataccel_history[-CONTEXT_LENGTH:]
@@ -215,9 +215,8 @@ def get_available_controllers():
 
 
 def run_rollout(data_path, controller_type, model_path, debug=False):
-  tinyphysicsmodel = TinyPhysicsModel(model_path, debug=debug)
   controller = importlib.import_module(f'controllers.{controller_type}').Controller()
-  sim = TinyPhysicsSimulator(tinyphysicsmodel, str(data_path), controller=controller, debug=debug)
+  sim = TinyPhysicsSimulator(str(data_path), controller=controller, debug=debug)
   return sim.rollout(), sim.target_lataccel_history, sim.current_lataccel_history
 
 
