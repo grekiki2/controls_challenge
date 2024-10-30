@@ -15,7 +15,7 @@ from tqdm.contrib.concurrent import process_map
 from tinyphysics import CONTROL_START_IDX, get_available_controllers, run_rollout
 
 sns.set_theme()
-SAMPLE_ROLLOUTS = 5
+SAMPLE_ROLLOUTS = 0
 
 COLORS = {
   'test': '#c0392b',
@@ -54,8 +54,8 @@ def create_report(test, baseline, sample_rollouts, costs, num_segs):
   res.append(f"<h2 style='font-size: 30px; margin-top: 50px'>Aggregate Costs (total rollouts: {num_segs})</h2>")
   res_df = pd.DataFrame(costs)
   fig, axs = plt.subplots(ncols=3, figsize=(18, 6), sharey=True)
-  bins = np.arange(0, 1000, 10)
-  for ax, cost in zip(axs, ['lataccel_cost', 'jerk_cost', 'total_cost']):
+  bins_ = [np.arange(0, 200/50, 10/50), np.arange(0, 200, 10), np.arange(0, 200, 10)]
+  for bins, ax, cost in zip(bins_, axs, ['lataccel_cost', 'jerk_cost', 'total_cost']):
     for controller in ['test', 'baseline']:
       ax.hist(res_df[res_df['controller'] == controller][cost], bins=bins, label=controller, alpha=0.5, color=COLORS[controller])
     ax.set_xlabel('Cost')
@@ -77,20 +77,21 @@ def create_report(test, baseline, sample_rollouts, costs, num_segs):
   else:
     res.append(f"<h3 style='font-size: 20px; color: #c0392b'> ❌ Test Controller ({test}) failed to beat Baseline Controller ({baseline})! ❌</h3>")
 
-  res.append("<hr style='border: #ddd 1px solid; width: 80%'>")
-  res.append("<h2  style='font-size: 30px; margin-top: 50px'>Sample Rollouts</h2>")
-  fig, axs = plt.subplots(ncols=1, nrows=SAMPLE_ROLLOUTS, figsize=(15, 3 * SAMPLE_ROLLOUTS), sharex=True)
-  for ax, rollout in zip(axs, sample_rollouts):
-    ax.plot(rollout['desired_lataccel'], label='Desired Lateral Acceleration', color='#27ae60')
-    ax.plot(rollout['test_controller_lataccel'], label='Test Controller Lateral Acceleration', color=COLORS['test'])
-    ax.plot(rollout['baseline_controller_lataccel'], label='Baseline Controller Lateral Acceleration', color=COLORS['baseline'])
-    ax.set_xlabel('Step')
-    ax.set_ylabel('Lateral Acceleration')
-    ax.set_title(f"Segment: {rollout['seg']}")
-    ax.axline((CONTROL_START_IDX, 0), (CONTROL_START_IDX, 1), color='black', linestyle='--', alpha=0.5, label='Control Start')
-    ax.legend()
-  fig.tight_layout()
-  res.append(f'<img style="max-width:100%" src="data:image/png;base64,{img2base64(fig)}" alt="Plot">')
+  if SAMPLE_ROLLOUTS > 0:
+    res.append("<hr style='border: #ddd 1px solid; width: 80%'>")
+    res.append("<h2  style='font-size: 30px; margin-top: 50px'>Sample Rollouts</h2>")
+    fig, axs = plt.subplots(ncols=1, nrows=SAMPLE_ROLLOUTS, figsize=(15, 3 * SAMPLE_ROLLOUTS), sharex=True)
+    for ax, rollout in zip(axs, sample_rollouts):
+      ax.plot(rollout['desired_lataccel'], label='Desired Lateral Acceleration', color='#27ae60')
+      ax.plot(rollout['test_controller_lataccel'], label='Test Controller Lateral Acceleration', color=COLORS['test'])
+      ax.plot(rollout['baseline_controller_lataccel'], label='Baseline Controller Lateral Acceleration', color=COLORS['baseline'])
+      ax.set_xlabel('Step')
+      ax.set_ylabel('Lateral Acceleration')
+      ax.set_title(f"Segment: {rollout['seg']}")
+      ax.axline((CONTROL_START_IDX, 0), (CONTROL_START_IDX, 1), color='black', linestyle='--', alpha=0.5, label='Control Start')
+      ax.legend()
+    fig.tight_layout()
+    res.append(f'<img style="max-width:100%" src="data:image/png;base64,{img2base64(fig)}" alt="Plot">')
   res.append("</body></html>")
 
   with open("report.html", "w", encoding='utf-8') as fob:
@@ -133,7 +134,7 @@ if __name__ == "__main__":
   for controller_cat, controller_type in [('baseline', args.baseline_controller), ('test', args.test_controller)]:
     print(f"Running batch rollouts => {controller_cat} controller: {controller_type}")
     rollout_partial = partial(run_rollout, controller_type=controller_type, model_path=args.model_path, debug=False)
-    results = process_map(rollout_partial, files[SAMPLE_ROLLOUTS:], max_workers=16, chunksize=10)
+    results = process_map(rollout_partial, files[SAMPLE_ROLLOUTS:], max_workers=32, chunksize=1)
     costs += [{'controller': controller_cat, **result[0]} for result in results]
 
   create_report(args.test_controller, args.baseline_controller, sample_rollouts, costs, len(files))

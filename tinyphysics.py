@@ -182,10 +182,10 @@ class TinyPhysicsSimulator:
 
   def compute_cost(self) -> Dict[str, float]:
     target = np.array(self.target_lataccel_history)[CONTROL_START_IDX:COST_END_IDX]
-    pred = np.array(self.current_lataccel_history)[CONTROL_START_IDX:COST_END_IDX]
+    pred = np.array(self.current_lataccel_history)[CONTROL_START_IDX-1:COST_END_IDX]
 
-    lat_accel_cost = np.mean((target - pred)**2) * 100
-    jerk_cost = np.mean((np.diff(pred) / DEL_T)**2) * 100
+    lat_accel_cost = np.mean((target - pred[1:])**2) * 100
+    jerk_cost = np.mean((np.diff(pred) / DEL_T)**2) * 100 # prvi jerk v resnici manjka
     total_cost = (lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER) + jerk_cost
     return {'lataccel_cost': lat_accel_cost, 'jerk_cost': jerk_cost, 'total_cost': total_cost}
 
@@ -217,6 +217,8 @@ def get_available_controllers():
 def run_rollout(data_path, controller_type, model_path, debug=False):
   controller = importlib.import_module(f'controllers.{controller_type}').Controller()
   sim = TinyPhysicsSimulator(str(data_path), controller=controller, debug=debug)
+  if getattr(controller, "giveSim", None):
+    controller.giveSim(sim)
   return sim.rollout(), sim.target_lataccel_history, sim.current_lataccel_history
 
 
@@ -255,10 +257,10 @@ if __name__ == "__main__":
     costs = [result[0] for result in results]
     costs_df = pd.DataFrame(costs)
     print(f"\nAverage lataccel_cost: {np.mean(costs_df['lataccel_cost']):>6.4}, average jerk_cost: {np.mean(costs_df['jerk_cost']):>6.4}, average total_cost: {np.mean(costs_df['total_cost']):>6.4}")
-    for cost in costs_df.columns:
-      plt.hist(costs_df[cost], bins=np.arange(0, 1000, 10), label=cost, alpha=0.5)
-    plt.xlabel('costs')
-    plt.ylabel('Frequency')
-    plt.title('costs Distribution')
-    plt.legend()
-    plt.show()
+    # for cost in costs_df.columns:
+    #   plt.hist(costs_df[cost], bins=np.arange(0, 1000, 10), label=cost, alpha=0.5)
+    # plt.xlabel('costs')
+    # plt.ylabel('Frequency')
+    # plt.title('costs Distribution')
+    # plt.legend()
+    # plt.show()
