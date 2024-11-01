@@ -74,25 +74,33 @@ class TinyPhysicsModel:
   def softmax(self, x, axis=-1):
     e_x = np.exp(x - np.max(x, axis=axis, keepdims=True))
     return e_x / np.sum(e_x, axis=axis, keepdims=True)
-
-  def predict(self, input_data: dict, temperature=1.) -> int:
+  
+  def getProbs(self, sim_states: List[State], actions: List[float], past_preds: List[float], temperature=0.8):
+    input_data = self.convertToModelData(sim_states, actions, past_preds)
     res = self.ort_session.run(None, input_data)[0]
     probs = self.softmax(res / temperature, axis=-1)
     # we only care about the last timestep (batch size is just 1)
     assert probs.shape[0] == 1
     assert probs.shape[2] == VOCAB_SIZE
-    sample = np.random.choice(probs.shape[2], p=probs[0, -1])
-    return sample
+    return probs[0, -1, :]
 
-  def get_current_lataccel(self, sim_states: List[State], actions: List[float], past_preds: List[float]) -> float:
+  def convertToModelData(self, sim_states: List[State], actions: List[float], past_preds: List[float]) -> dict:
     tokenized_lataccels = self.tokenizer.encode(past_preds)
     raw_states = [list(x) for x in sim_states]
     states = np.column_stack([actions, raw_states])
-    input_data = {
+    return {
       'states': np.expand_dims(states, axis=0).astype(np.float32),
       'tokens': np.expand_dims(tokenized_lataccels, axis=0).astype(np.int64)
     }
-    return self.tokenizer.decode(self.predict(input_data, temperature=0.8))
+
+  def get_current_lataccel(self, sim_states: List[State], actions: List[float], past_preds: List[float]) -> float:
+    probs = self.getProbs(sim_states, actions, past_preds)
+    sample = np.random.choice(VOCAB_SIZE, p=probs)
+    return self.tokenizer.decode(sample)
+
+  def get_current_lataccel_dist(self, sim_states: List[State], actions: List[float], past_preds: List[float]) -> np.ndarray:
+    probs = self.getProbs(sim_states, actions, past_preds)
+    return probs
 
 model = TinyPhysicsModel('./models/tinyphysics.onnx', debug=False)
 
@@ -126,26 +134,22 @@ class TinyPhysicsSimulator:
     })
     return processed_df
 
-  def sim_step(self, step_idx: int) -> None:
-    if step_idx < CONTROL_START_IDX:
-      # override with input before controls start
-      self.current_lataccel = self.get_state_target_futureplan(step_idx)[1]
-    else:
-      pred = model.get_current_lataccel(
+  def getProbDist(self, nextAction:float) -> np.ndarray:
+    state, target, futureplan = self.get_state_target_futureplan(self.step_idx)
+    self.state_history.append(state)
+    self.target_lataccel_history.append(target)
+    self.action_history.append(nextAction)
+
+    pred = model.get_current_lataccel_dist(
         sim_states=self.state_history[-CONTEXT_LENGTH:],
         actions=self.action_history[-CONTEXT_LENGTH:],
         past_preds=self.current_lataccel_history[-CONTEXT_LENGTH:]
-      )
-      self.current_lataccel = np.clip(pred, self.current_lataccel - MAX_ACC_DELTA, self.current_lataccel + MAX_ACC_DELTA)
+    )
 
-    self.current_lataccel_history.append(self.current_lataccel)
-
-  def control_step(self, step_idx: int) -> None:
-    action = self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], future_plan=self.futureplan)
-    if step_idx < CONTROL_START_IDX:
-      action = self.data['steer_command'].values[step_idx]
-    action = np.clip(action, STEER_RANGE[0], STEER_RANGE[1])
-    self.action_history.append(action)
+    self.action_history.pop()
+    self.target_lataccel_history.pop()
+    self.state_history.pop()
+    return pred
 
   def get_state_target_futureplan(self, step_idx: int) -> Tuple[State, float, FuturePlan]:
     state = self.data.iloc[step_idx]
@@ -160,6 +164,27 @@ class TinyPhysicsSimulator:
       )
     )
 
+  def control_step(self, step_idx: int) -> None:
+    action = self.controller.update(self.target_lataccel_history[step_idx], self.current_lataccel, self.state_history[step_idx], future_plan=self.futureplan)
+    if step_idx < CONTROL_START_IDX:
+      action = self.data['steer_command'].values[step_idx]
+    action = np.clip(action, STEER_RANGE[0], STEER_RANGE[1])
+    self.action_history.append(action)
+
+  def sim_step(self, step_idx: int) -> None:
+    if step_idx < CONTROL_START_IDX:
+      # override with input before controls start
+      self.current_lataccel = self.get_state_target_futureplan(step_idx)[1]
+    else:
+      pred = model.get_current_lataccel(
+        sim_states=self.state_history[-CONTEXT_LENGTH:],
+        actions=self.action_history[-CONTEXT_LENGTH:],
+        past_preds=self.current_lataccel_history[-CONTEXT_LENGTH:]
+      )
+      self.current_lataccel = np.clip(pred, self.current_lataccel - MAX_ACC_DELTA, self.current_lataccel + MAX_ACC_DELTA)
+
+    self.current_lataccel_history.append(self.current_lataccel)
+
   def step(self) -> None:
     state, target, futureplan = self.get_state_target_futureplan(self.step_idx)
     self.state_history.append(state)
@@ -169,6 +194,7 @@ class TinyPhysicsSimulator:
     self.control_step(self.step_idx)
     self.sim_step(self.step_idx)
     self.step_idx += 1
+    
 
   def plot_data(self, ax, lines, axis_labels, title) -> None:
     ax.clear()
@@ -189,12 +215,21 @@ class TinyPhysicsSimulator:
     total_cost = (lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER) + jerk_cost
     return {'lataccel_cost': lat_accel_cost, 'jerk_cost': jerk_cost, 'total_cost': total_cost}
 
-  def rollout(self) -> Dict[str, float]:
+  def compute_last_cost(self):
+    target = np.array(self.target_lataccel_history)[CONTROL_START_IDX:COST_END_IDX]
+    pred = np.array(self.current_lataccel_history)[CONTROL_START_IDX-1:COST_END_IDX]
+
+    lat_accel_cost = ((target - pred[1:])**2)[-1] * 100
+    jerk_cost = ((np.diff(pred) / DEL_T)**2)[-1] * 100
+    total_cost = (lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER) + jerk_cost
+    return total_cost
+
+  def rollout(self, lim=COST_END_IDX) -> Dict[str, float]:
     if self.debug:
       plt.ion()
       fig, ax = plt.subplots(4, figsize=(12, 14), constrained_layout=True)
 
-    for _ in range(CONTEXT_LENGTH, COST_END_IDX):
+    for _ in range(CONTEXT_LENGTH, min(lim, len(self.data)-FUTURE_PLAN_STEPS)):
       self.step()
       if self.debug and self.step_idx % 10 == 0:
         print(f"Step {self.step_idx:<5}: Current lataccel: {self.current_lataccel:>6.2f}, Target lataccel: {self.target_lataccel_history[-1]:>6.2f}")
@@ -253,7 +288,7 @@ if __name__ == "__main__":
   elif data_path.is_dir():
     run_rollout_partial = partial(run_rollout, controller_type=args.controller, model_path=args.model_path, debug=False)
     files = sorted(data_path.iterdir())[:args.num_segs]
-    results = process_map(run_rollout_partial, files, max_workers=16, chunksize=10)
+    results = process_map(run_rollout_partial, files, max_workers=32, chunksize=1)
     costs = [result[0] for result in results]
     costs_df = pd.DataFrame(costs)
     print(f"\nAverage lataccel_cost: {np.mean(costs_df['lataccel_cost']):>6.4}, average jerk_cost: {np.mean(costs_df['jerk_cost']):>6.4}, average total_cost: {np.mean(costs_df['total_cost']):>6.4}")

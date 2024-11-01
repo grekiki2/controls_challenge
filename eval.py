@@ -54,7 +54,7 @@ def create_report(test, baseline, sample_rollouts, costs, num_segs):
   res.append(f"<h2 style='font-size: 30px; margin-top: 50px'>Aggregate Costs (total rollouts: {num_segs})</h2>")
   res_df = pd.DataFrame(costs)
   fig, axs = plt.subplots(ncols=3, figsize=(18, 6), sharey=True)
-  bins_ = [np.arange(0, 200/50, 10/50), np.arange(0, 200, 10), np.arange(0, 200, 10)]
+  bins_ = [np.arange(0, 200/50, 5/50), np.arange(0, 200, 5), np.arange(0, 200, 5)]
   for bins, ax, cost in zip(bins_, axs, ['lataccel_cost', 'jerk_cost', 'total_cost']):
     for controller in ['test', 'baseline']:
       ax.hist(res_df[res_df['controller'] == controller][cost], bins=bins, label=controller, alpha=0.5, color=COLORS[controller])
@@ -63,10 +63,37 @@ def create_report(test, baseline, sample_rollouts, costs, num_segs):
     ax.set_title(f'Cost Distribution: {cost}')
     ax.legend()
   res.append(f'<img style="max-width:100%" src="data:image/png;base64,{img2base64(fig)}" alt="Plot">')
-  agg_df = res_df.groupby('controller').agg({'lataccel_cost': 'mean', 'jerk_cost': 'mean', 'total_cost': 'mean'}).round(3).reset_index()
-  res.append(agg_df.to_html(index=False))
 
-  passed_baseline = agg_df[agg_df['controller'] == 'test']['total_cost'].values[0] < agg_df[agg_df['controller'] == 'baseline']['total_cost'].values[0]
+  # Calculate regular averages
+  agg_df = res_df.groupby('controller').agg({
+      'lataccel_cost': 'mean', 
+      'jerk_cost': 'mean', 
+      'total_cost': 'mean'
+  }).round(3).reset_index()
+
+  # Calculate 95th percentile averages
+  def get_best_95_avg(group):
+    threshold = np.percentile(group['total_cost'], 95)
+    best_95 = group[group['total_cost'] <= threshold]
+    return pd.Series({
+        'lataccel_cost_95': best_95['lataccel_cost'].mean(),
+        'jerk_cost_95': best_95['jerk_cost'].mean(),
+        'total_cost_95': best_95['total_cost'].mean()
+    })
+
+  best_95_df = res_df.groupby('controller').apply(get_best_95_avg).round(3).reset_index()
+  
+  # Merge regular and 95th percentile metrics
+  agg_df = pd.merge(agg_df, best_95_df, on='controller')
+
+  # Render both tables
+  res.append("<h3 style='font-size: 25px'>All Runs Average</h3>")
+  res.append(agg_df[['controller', 'lataccel_cost', 'jerk_cost', 'total_cost']].to_html(index=False))
+  
+  res.append("<h3 style='font-size: 25px'>Best 95% Runs Average</h3>")
+  res.append(agg_df[['controller', 'lataccel_cost_95', 'jerk_cost_95', 'total_cost_95']].to_html(index=False))
+
+  passed_baseline = agg_df[agg_df['controller'] == 'test']['total_cost_95'].values[0] < agg_df[agg_df['controller'] == 'baseline']['total_cost_95'].values[0]
   if passed_baseline:
     res.append(f"<h3 style='font-size: 20px; color: #27ae60'> ✅ Test Controller ({test}) passed Baseline Controller ({baseline})! ✅ </h3>")
     res.append("""<p>Check the leaderboard
