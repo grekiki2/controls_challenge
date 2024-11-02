@@ -10,6 +10,7 @@ import os
 import warnings
 warnings.filterwarnings("ignore")
 import random
+from optimal.test_optimal_src import Controller1Step, Controller1StepOptimized
 
 pygame.init()
 os.environ['SDL_VIDEO_WINDOW_POS'] = "0,0"
@@ -37,7 +38,7 @@ class Controller(BaseController):
         
     def update(self, target_lataccel, current_lataccel, state, future_plan=None):
         return self.next_command
-    
+
 def create_plot(y_data, title, xlabel, ylabel, vertical_time=False, y_lim=None, x_data=None, x_lim=None, shade_range=None):
     # Calculate figure size to match cell size
     FW = W // 2 - 2*PAD
@@ -88,6 +89,8 @@ def create_plot(y_data, title, xlabel, ylabel, vertical_time=False, y_lim=None, 
     return pygame.transform.scale(surface, (FW, FH))
 
 controller = Controller()
+# controller = Controller1Step()
+setattr(controller, "next_command", 0)
 sim = TinyPhysicsSimulator("./data/00000.csv", controller=controller, debug=False)
 controller.giveSim(sim)
 np.random.seed(random.randrange(2**32))
@@ -120,8 +123,10 @@ while True:
         if event.type == pygame.MOUSEBUTTONDOWN:
             x, y = event.pos
             if x > W//2 and y < H//3:
-                controller.next_command += 0.02 * slider_value
+                # controller.next_command += 0.02 * slider_value
+                controller.next_command = 2*slider_value
                 sim.step()
+                # print(controller.data)
                 print(f"{sim.step_idx} cost {sim.compute_cost()['total_cost']:.2f} last {sim.compute_last_cost():.2f}")
                 if sim.step_idx == 150:
                     exit()
@@ -160,7 +165,8 @@ while True:
         alphas2 = np.interp(totalCost, [100, 200], [0, 1])  # Optional: red shading for high cost
 
         shade_range = (x_vals2, alphas, alphas2)
-        probs = create_plot([p_dist], "Probabilities", "Lateral Acceleration", "Probability", False, [0, 0.2], x_vals, [meanLataccel-0.5, meanLataccel+0.5], shade_range)
+        # probs = create_plot([p_dist], "Probabilities", "Lateral Acceleration", "Probability", False, [0, 0.2], x_vals, [meanLataccel-0.5, meanLataccel+0.5], shade_range)
+        probs = create_plot([p_dist], "Probabilities", "Lateral Acceleration", "Probability", False, [0, max(0.2, max(p_dist))], x_vals, [-5, 5], shade_range)
         screen.blit(probs, (cell_width+PAD, cell_height + PAD))
         pygame.display.flip()
         drawn2 = True
@@ -187,7 +193,7 @@ while True:
         True,
         [meanLataccel-0.5, meanLataccel+0.5]
     )
-    cmds = create_plot([sim.action_history[-20:]], "Commands", "Command", "Time", True, [-1, 1])
+    cmds = create_plot([sim.action_history[-20:]], "Commands", "Command", "Time", True, [-2, 2])
     # Display plots
     screen.blit(v_ego_plot, (PAD, PAD))
     screen.blit(a_ego_plot, (PAD, cell_height+PAD))

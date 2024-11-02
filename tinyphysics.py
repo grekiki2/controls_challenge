@@ -103,7 +103,6 @@ class TinyPhysicsModel:
     return probs
 
 model = TinyPhysicsModel('./models/tinyphysics.onnx', debug=False)
-
 class TinyPhysicsSimulator:
   def __init__(self, data_path: str, controller: BaseController, debug: bool = False) -> None:
     self.data_path = data_path
@@ -149,6 +148,27 @@ class TinyPhysicsSimulator:
     self.action_history.pop()
     self.target_lataccel_history.pop()
     self.state_history.pop()
+    return pred
+  
+  def getProbDistMid(self, nextAction:float) -> np.ndarray:
+    self.action_history.append(nextAction)
+
+    pred = model.get_current_lataccel_dist(
+        sim_states=self.state_history[-CONTEXT_LENGTH:],
+        actions=self.action_history[-CONTEXT_LENGTH:],
+        past_preds=self.current_lataccel_history[-CONTEXT_LENGTH:]
+    )
+    lastAccel = self.current_lataccel
+    idxLeft = model.tokenizer.encode(lastAccel-MAX_ACC_DELTA)
+    idxRight = model.tokenizer.encode(lastAccel+MAX_ACC_DELTA)
+    if idxLeft > 0:
+      pred[idxLeft] = np.sum(pred[:idxLeft+1])
+      pred[:idxLeft] = 0
+    if idxRight < VOCAB_SIZE - 1:
+      pred[idxRight] = np.sum(pred[idxRight:])
+      pred[idxRight+1:] = 0
+
+    self.action_history = self.action_history[:-1]
     return pred
 
   def get_state_target_futureplan(self, step_idx: int) -> Tuple[State, float, FuturePlan]:
@@ -211,7 +231,7 @@ class TinyPhysicsSimulator:
     pred = np.array(self.current_lataccel_history)[CONTROL_START_IDX-1:COST_END_IDX]
 
     lat_accel_cost = np.mean((target - pred[1:])**2) * 100
-    jerk_cost = np.mean((np.diff(pred) / DEL_T)**2) * 100 # prvi jerk v resnici manjka
+    jerk_cost = np.mean((np.diff(pred) / DEL_T)**2) * 100
     total_cost = (lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER) + jerk_cost
     return {'lataccel_cost': lat_accel_cost, 'jerk_cost': jerk_cost, 'total_cost': total_cost}
 
