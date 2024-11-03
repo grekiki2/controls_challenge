@@ -182,9 +182,9 @@ class TinyPhysicsSimulator:
 
   def compute_cost(self) -> Dict[str, float]:
     target = np.array(self.target_lataccel_history)[CONTROL_START_IDX:COST_END_IDX]
-    pred = np.array(self.current_lataccel_history)[CONTROL_START_IDX:COST_END_IDX]
+    pred = np.array(self.current_lataccel_history)[CONTROL_START_IDX-1:COST_END_IDX]
 
-    lat_accel_cost = np.mean((target - pred)**2) * 100
+    lat_accel_cost = np.mean((target - pred[1:])**2) * 100
     jerk_cost = np.mean((np.diff(pred) / DEL_T)**2) * 100
     total_cost = (lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER) + jerk_cost
     return {'lataccel_cost': lat_accel_cost, 'jerk_cost': jerk_cost, 'total_cost': total_cost}
@@ -194,7 +194,7 @@ class TinyPhysicsSimulator:
       plt.ion()
       fig, ax = plt.subplots(4, figsize=(12, 14), constrained_layout=True)
 
-    for _ in range(CONTEXT_LENGTH, COST_END_IDX):
+    for _ in range(CONTEXT_LENGTH, min(COST_END_IDX, len(self.data)-FUTURE_PLAN_STEPS)):
       self.step()
       if self.debug and self.step_idx % 10 == 0:
         print(f"Step {self.step_idx:<5}: Current lataccel: {self.current_lataccel:>6.2f}, Target lataccel: {self.target_lataccel_history[-1]:>6.2f}")
@@ -217,6 +217,8 @@ def get_available_controllers():
 def run_rollout(data_path, controller_type, model_path, debug=False):
   controller = importlib.import_module(f'controllers.{controller_type}').Controller()
   sim = TinyPhysicsSimulator(str(data_path), controller=controller, debug=debug)
+  if getattr(controller, "giveSim", None):
+    controller.giveSim(sim)
   return sim.rollout(), sim.target_lataccel_history, sim.current_lataccel_history
 
 
